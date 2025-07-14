@@ -4,13 +4,13 @@
 using namespace kvstore;
 
 TEST(KVStoreTest, PutStoresKeyValue) {
-    KVStore store;
+    KVStore store(1024);
     store.put("key1", "value1");
     EXPECT_EQ(store.get("key1"), std::optional<std::string>("value1"));
 }
 
 TEST(KVStoreTest, GetReturnsCorrectValue) {
-    KVStore store;
+    KVStore store(1024);
     store.put("alpha", "beta");
     auto result = store.get("alpha");
     ASSERT_TRUE(result.has_value());
@@ -18,69 +18,110 @@ TEST(KVStoreTest, GetReturnsCorrectValue) {
 }
 
 TEST(KVStoreTest, RemoveDeletesKey) {
-    KVStore store;
+    KVStore store(1024);
     store.put("foo", "bar");
     EXPECT_TRUE(store.remove("foo"));
     EXPECT_FALSE(store.get("foo").has_value());
 }
 
 TEST(KVStoreTest, GetSizeTracksEntries) {
-    KVStore store;
-    EXPECT_EQ(store.get_size(), 0);
+    KVStore store(1024);
+    EXPECT_EQ(store.size(), 0);
     store.put("a", "1");
     store.put("b", "2");
-    EXPECT_EQ(store.get_size(), 2);
+    EXPECT_EQ(store.size(), 2);
     store.remove("a");
-    EXPECT_EQ(store.get_size(), 1);
+    EXPECT_EQ(store.size(), 1);
 }
 
 TEST(KVStoreTest, PutOverwritesValueForSameKey) {
-    KVStore store;
+    KVStore store(1024);
     store.put("key", "val1");
     store.put("key", "val2");
     EXPECT_EQ(store.get("key"), std::optional<std::string>("val2"));
 }
 
 TEST(KVStoreTest, RemoveNonExistentKeyReturnsFalse) {
-    KVStore store;
+    KVStore store(1024);
     EXPECT_FALSE(store.remove("ghost"));
 }
 
 TEST(KVStoreTest, GetMissingKeyReturnsNullopt) {
-    KVStore store;
+    KVStore store(1024);
     EXPECT_FALSE(store.get("missing").has_value());
 }
 
-TEST(KVStoreTest, CollisionHandlingStoresAllKeys) {
-    KVStore store(1); // force all keys into same bucket
+TEST(KVStoreTest, EvictsLeastRecentlyUsedWhenOverCapacity) {
+    KVStore store(1); // small capacity
     store.put("a", "1");
     store.put("b", "2");
     store.put("c", "3");
 
-    EXPECT_EQ(store.get("a"), std::optional<std::string>("1"));
-    EXPECT_EQ(store.get("b"), std::optional<std::string>("2"));
-    EXPECT_EQ(store.get("c"), std::optional<std::string>("3"));
+    EXPECT_FALSE(store.get("a").has_value()); // evicted
+    EXPECT_FALSE(store.get("b").has_value()); // evicted
+    EXPECT_TRUE(store.get("c").has_value());  // last inserted
 }
 
+
 TEST(KVStoreTest, SizeDoesNotIncreaseOnOverwrite) {
-    KVStore store;
+    KVStore store(1024);
     store.put("k", "v1");
-    size_t s1 = store.get_size();
+    size_t s1 = store.size();
     store.put("k", "v2");
-    size_t s2 = store.get_size();
+    size_t s2 = store.size();
     EXPECT_EQ(s1, s2);
 }
 
 TEST(KVStoreTest, RemoveThenGetReturnsNullopt) {
-    KVStore store;
+    KVStore store(1024);
     store.put("temp", "data");
     store.remove("temp");
     EXPECT_FALSE(store.get("temp").has_value());
 }
 
 TEST(KVStoreTest, RemoveSameKeyTwiceSecondFails) {
-    KVStore store;
+    KVStore store(1024);
     store.put("one", "uno");
     EXPECT_TRUE(store.remove("one"));
     EXPECT_FALSE(store.remove("one"));
+}
+
+TEST(KVStoreTest, EvictsLeastRecentlyUsedKey) {
+    KVStore store(2);
+    store.put("a", "1");
+    store.put("b", "2");
+    store.get("a");       // access 'a' to promote it
+    store.put("c", "3");  // should evict 'b'
+
+    EXPECT_TRUE(store.get("a").has_value()); // stays
+    EXPECT_FALSE(store.get("b").has_value()); // evicted
+    EXPECT_TRUE(store.get("c").has_value()); // inserted
+}
+
+TEST(KVStoreTest, StressPutEvictPattern) {
+    KVStore store(10);
+    for (int i = 0; i < 100; ++i) {
+        store.put("key" + std::to_string(i), "val" + std::to_string(i));
+    }
+    EXPECT_LE(store.size(), 10);
+}
+
+TEST(KVStoreTest, GetUpdatesLRUOrder) {
+    KVStore store(2);
+    store.put("a", "1");
+    store.put("b", "2");
+    store.get("a");       // make 'a' recent
+    store.put("c", "3");  // should evict 'b'
+    EXPECT_TRUE(store.get("a").has_value());
+    EXPECT_FALSE(store.get("b").has_value());
+    EXPECT_TRUE(store.get("c").has_value());
+}
+
+TEST(KVStoreTest, ReinsertEvictedKey) {
+    KVStore store(1);
+    store.put("x", "1");
+    store.put("y", "2"); // evicts x
+    store.put("x", "3"); // reinsert x
+    EXPECT_EQ(store.get("x"), std::optional<std::string>("3"));
+    EXPECT_FALSE(store.get("y").has_value()); // evicted
 }
