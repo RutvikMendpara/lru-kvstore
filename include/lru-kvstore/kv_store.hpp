@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -29,8 +28,8 @@ namespace kvstore{
     private:
 
         struct Node {
-            std::string key;
-            std::string value;
+            char key[32];
+            char value[64];
             Node* prev = nullptr;
             Node* next = nullptr;
         };

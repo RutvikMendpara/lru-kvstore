@@ -1,5 +1,9 @@
 #include "lru-kvstore/kv_store.hpp"
 
+#include <cstring>
+#include <string>
+#include <algorithm>
+
 
 namespace kvstore{
     KVStore::KVStore(size_t capacity)
@@ -43,7 +47,9 @@ namespace kvstore{
 
             if (bucket.state == BucketState::Occupied &&
                 bucket.hash == hash &&
-                bucket.node->key == key)
+                std::strncmp(bucket.node->key, key.data(), sizeof(bucket.node->key)) == 0 &&
+                key.size() == std::strlen(bucket.node->key))
+
                 return {true, idx}; // Key found
 
             idx = (idx + 1) % table.size();
@@ -61,7 +67,7 @@ namespace kvstore{
 
         Node* node = table[idx].node;
         moveToFront(node);
-        return node->value;
+        return std::string{node->value};
     }
 
 
@@ -73,7 +79,10 @@ namespace kvstore{
         if (found) {
             // Key exists - update value and promote in LRU
             Node* node = table[idx].node;
-            node->value = value;
+            const size_t len = std::min(value.size(), sizeof(node->value) - 1);
+            memcpy(node->value, value.data(), len);
+            node->value[len] = '\0';
+
             moveToFront(node);
             return;
         }
@@ -84,7 +93,17 @@ namespace kvstore{
         }
 
         // Insert new node
-        Node* node = new Node{std::string(key), std::string(value)};
+        Node* node = new Node{};
+        size_t key_len = std::min(key.size(), sizeof(node->key) - 1);
+        memcpy(node->key, key.data(), key_len);
+        node->key[key_len] = '\0';
+
+        size_t val_len = std::min(value.size(), sizeof(node->value) - 1);
+        memcpy(node->value, value.data(), val_len);
+        node->value[val_len] = '\0';
+
+
+
 
         insertToFront(node);
 
@@ -159,8 +178,9 @@ namespace kvstore{
             auto& bucket = table[idx];
 
             if (bucket.state == BucketState::Occupied &&
-                bucket.hash == hash &&
-                bucket.node->key == node->key) {
+                    bucket.hash == hash &&
+                    std::strcmp(bucket.node->key, node->key) == 0)
+            {
 
                 bucket.node = nullptr;
                 bucket.state = BucketState::Deleted;
