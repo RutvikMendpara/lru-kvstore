@@ -20,7 +20,7 @@ TEST(KVStoreTest, GetReturnsCorrectValue) {
 TEST(KVStoreTest, RemoveDeletesKey) {
     KVStore store(1024);
     store.put("foo", "bar");
-    EXPECT_TRUE(store.remove("foo"));
+    EXPECT_TRUE(store.erase("foo"));
     EXPECT_FALSE(store.get("foo").has_value());
 }
 
@@ -30,7 +30,7 @@ TEST(KVStoreTest, GetSizeTracksEntries) {
     store.put("a", "1");
     store.put("b", "2");
     EXPECT_EQ(store.size(), 2);
-    store.remove("a");
+    store.erase("a");
     EXPECT_EQ(store.size(), 1);
 }
 
@@ -43,7 +43,7 @@ TEST(KVStoreTest, PutOverwritesValueForSameKey) {
 
 TEST(KVStoreTest, RemoveNonExistentKeyReturnsFalse) {
     KVStore store(1024);
-    EXPECT_FALSE(store.remove("ghost"));
+    EXPECT_FALSE(store.erase("ghost"));
 }
 
 TEST(KVStoreTest, GetMissingKeyReturnsNullopt) {
@@ -75,15 +75,15 @@ TEST(KVStoreTest, SizeDoesNotIncreaseOnOverwrite) {
 TEST(KVStoreTest, RemoveThenGetReturnsNullopt) {
     KVStore store(1024);
     store.put("temp", "data");
-    store.remove("temp");
+    store.erase("temp");
     EXPECT_FALSE(store.get("temp").has_value());
 }
 
 TEST(KVStoreTest, RemoveSameKeyTwiceSecondFails) {
     KVStore store(1024);
     store.put("one", "uno");
-    EXPECT_TRUE(store.remove("one"));
-    EXPECT_FALSE(store.remove("one"));
+    EXPECT_TRUE(store.erase("one"));
+    EXPECT_FALSE(store.erase("one"));
 }
 
 TEST(KVStoreTest, EvictsLeastRecentlyUsedKey) {

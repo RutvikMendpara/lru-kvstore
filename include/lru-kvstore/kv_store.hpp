@@ -1,9 +1,10 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <optional>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 
 namespace kvstore{
@@ -20,9 +21,9 @@ namespace kvstore{
         KVStore(KVStore&&) = delete;
         KVStore& operator=(KVStore&&) = delete;
 
-        void put(const std::string& key, const std::string& value);
-        std::optional<std::string> get(const std::string& key);
-        bool remove(const std::string& key);
+        void put( std::string_view key,  std::string_view value);
+        std::optional<std::string> get( std::string_view key);
+        bool erase(std::string_view key);
         size_t size() const;
 
     private:
@@ -54,8 +55,8 @@ namespace kvstore{
         size_t current_size = 0;
 
         // Hashing + probing
-        static size_t fnv1a(const std::string& key) ;
-        std::pair<bool, size_t> find(const std::string& key, size_t hash) const;
+        static size_t fnv1a( std::string_view key) ;
+        std::pair<bool, size_t> find( std::string_view key, size_t hash) const;
 
         // LRU list ops
         void insertToFront(Node* node);

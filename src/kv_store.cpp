@@ -17,7 +17,7 @@ namespace kvstore{
     }
 
 
-    size_t KVStore::fnv1a(const std::string& key)
+    size_t KVStore::fnv1a(std::string_view key)
     {
         constexpr size_t FNV_OFFSET = 14695981039346656037ull;
         constexpr size_t FNV_PRIME  = 1099511628211ull;
@@ -30,7 +30,7 @@ namespace kvstore{
         return hash;
     }
 
-    std::pair<bool, size_t> KVStore::find(const std::string& key, size_t hash) const
+    std::pair<bool, size_t> KVStore::find( std::string_view key, size_t hash) const
     {
         size_t idx = hash % table.size();
         size_t start = idx;
@@ -39,7 +39,7 @@ namespace kvstore{
             const auto& bucket = table[idx];
 
             if (bucket.state == BucketState::Empty)
-                return {false, idx}; // Free slot — key not found
+                return {false, idx}; // Free slot - key not found
 
             if (bucket.state == BucketState::Occupied &&
                 bucket.hash == hash &&
@@ -48,12 +48,12 @@ namespace kvstore{
 
             idx = (idx + 1) % table.size();
             if (idx == start)
-                return {false, table.size()}; // Full loop — table is full
+                return {false, table.size()}; // Full loop - table is full
         }
     }
 
 
-    std::optional<std::string> KVStore::get(const std::string& key)
+    std::optional<std::string> KVStore::get( std::string_view key)
     {
         size_t hash = fnv1a(key);
         auto [found, idx] = find(key, hash);
@@ -65,13 +65,13 @@ namespace kvstore{
     }
 
 
-    void KVStore::put(const std::string& key, const std::string& value)
+    void KVStore::put( std::string_view key,  std::string_view value)
     {
         size_t hash = fnv1a(key);
         auto [found, idx] = find(key, hash);
 
         if (found) {
-            // Key exists — update value and promote in LRU
+            // Key exists - update value and promote in LRU
             Node* node = table[idx].node;
             node->value = value;
             moveToFront(node);
@@ -84,7 +84,8 @@ namespace kvstore{
         }
 
         // Insert new node
-        Node* node = new Node{key, value};
+        Node* node = new Node{std::string(key), std::string(value)};
+
         insertToFront(node);
 
         size_t insertIdx = hash % table.size();
@@ -173,7 +174,7 @@ namespace kvstore{
         --current_size;
     }
 
-    bool KVStore::remove(const std::string& key)
+    bool KVStore::erase( std::string_view key)
     {
         size_t hash = fnv1a(key);
         auto [found, idx] = find(key, hash);
