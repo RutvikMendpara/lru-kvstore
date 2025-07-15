@@ -38,3 +38,17 @@ target_include_directories(kvstore_tests PRIVATE include)
 
 include(GoogleTest)
 gtest_discover_tests(kvstore_tests)
+
+# Benchmark executable
+FetchContent_Declare(
+        benchmark
+        URL https://github.com/google/benchmark/archive/refs/tags/v1.9.4.zip
+)
+set(BENCHMARK_ENABLE_TESTING OFF)
+FetchContent_MakeAvailable(benchmark)
+
+
+file(GLOB_RECURSE BENCH_SOURCES CONFIGURE_DEPENDS bench/*.cpp)
+add_executable(kvstore_bench ${BENCH_SOURCES})
+target_link_libraries(kvstore_bench kvstore_lib benchmark)
+target_include_directories(kvstore_bench PRIVATE include)
