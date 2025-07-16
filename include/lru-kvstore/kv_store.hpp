@@ -11,7 +11,7 @@ namespace kvstore{
     class KVStore
     {
     public:
-        explicit KVStore(size_t capacity);
+        KVStore() = default;
         ~KVStore();
 
         // Disable copy/move semantics
@@ -21,7 +21,7 @@ namespace kvstore{
         KVStore& operator=(KVStore&&) = delete;
 
         void put( std::string_view key,  std::string_view value);
-        std::optional<std::string> get( std::string_view key);
+         std::optional<std::string_view> get( std::string_view key);
         bool erase(std::string_view key);
         size_t size() const;
 
@@ -46,11 +46,14 @@ namespace kvstore{
             BucketState state = BucketState::Empty;
         };
 
-        std::vector<Bucket> table;
+        static constexpr size_t CAPACITY = 1024;
+        Bucket table[CAPACITY];
+        Node node_pool[CAPACITY];
+        bool node_used[CAPACITY] = {};
+
         Node* head = nullptr;
         Node* tail = nullptr;
 
-        size_t capacity = 0;
         size_t current_size = 0;
 
         // Hashing + probing
@@ -62,6 +65,10 @@ namespace kvstore{
         void unlink(Node* node);
         void moveToFront(Node* node);
         void evict();
+
+        // Manual allocator
+        Node* allocate_node();
+        void free_node(Node* node);
     };
 
 }
