@@ -30,19 +30,23 @@ namespace kvstore{
     {
         size_t idx = hash % CAPACITY;
         size_t start = idx;
+        std::optional<size_t> first_deleted;
 
         while (true) {
             const auto& bucket = table[idx];
 
             if (bucket.state == BucketState::Empty)
-                return {false, idx}; // Free slot - key not found
+                return {false, first_deleted.value_or(idx)}; // Free slot - key not found
 
-            if (bucket.state == BucketState::Occupied &&
-                bucket.hash == hash &&
+            if (bucket.state == BucketState::Deleted) {
+                if (!first_deleted) first_deleted = idx;
+            }
+            else if (bucket.hash == hash &&
                 std::strncmp(bucket.node->key, key.data(), sizeof(bucket.node->key)) == 0 &&
                 key.size() == std::strlen(bucket.node->key))
-
-                return {true, idx}; // Key found
+                {
+                    return {true, idx};
+                }
 
             idx = (idx + 1) % CAPACITY;
             if (idx == start)
@@ -66,7 +70,6 @@ namespace kvstore{
 
     void KVStore::put(std::string_view key, std::string_view value) {
         if (key.size() >= sizeof(Node::key) || value.size() >= sizeof(Node::value)) {
-            // Reject too-long key/value
             return;
         }
 
@@ -78,14 +81,13 @@ namespace kvstore{
             size_t val_len = std::min(value.size(), sizeof(node->value) - 1);
             memcpy(node->value, value.data(), val_len);
             node->value[val_len] = '\0';
-
             moveToFront(node);
             return;
         }
 
-        // Evict if full
         if (current_size >= CAPACITY) {
-            evict(); // this will also call free_node()
+            evict();
+            std::tie(found, idx) = find(key, hash);
         }
 
         Node* node = allocate_node();
@@ -103,17 +105,10 @@ namespace kvstore{
 
         insertToFront(node);
 
-        size_t insertIdx = hash % CAPACITY;
-        while (true) {
-            auto& bucket = table[insertIdx];
-            if (bucket.state != BucketState::Occupied) {
-                bucket.hash = hash;
-                bucket.node = node;
-                bucket.state = BucketState::Occupied;
-                break;
-            }
-            insertIdx = (insertIdx + 1) % CAPACITY;
-        }
+        auto& bucket = table[idx];
+        bucket.hash = hash;
+        bucket.node = node;
+        bucket.state = BucketState::Occupied;
 
         ++current_size;
     }
