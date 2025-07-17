@@ -75,6 +75,31 @@ TEST(KVStoreTest, RemoveSameKeyTwiceSecondFails) {
     EXPECT_FALSE(store.erase("one"));
 }
 
+TEST(KVStoreTest, InsertAfterDeleteReusesSlot) {
+    KVStore store;
+
+    store.put("one", "1");
+    EXPECT_TRUE(store.erase("one"));
+    EXPECT_FALSE(store.get("one").has_value());
+
+    store.put("one", "2");
+    EXPECT_EQ(store.get("one"), std::optional<std::string>("2"));
+}
+
+TEST(KVStoreTest, LinearProbingWorksAfterDelete) {
+    KVStore store;
+
+    store.put("key1", "val1");
+    store.put("key2", "val2");
+    EXPECT_TRUE(store.erase("key1"));
+
+    store.put("key3", "val3");
+
+    EXPECT_EQ(store.get("key2"), std::optional<std::string>("val2"));
+    EXPECT_EQ(store.get("key3"), std::optional<std::string>("val3"));
+}
+
+
 /*
 // NOTE: In previous versions, KVStore supported dynamic capacity via constructor (e.g., KVStore(2)).
 // In the current stack-based design, capacity is fixed at compile time (CAPACITY=1024) for performance and simplicity.
