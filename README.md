@@ -5,7 +5,7 @@ High-performance in-memory key-value store with LRU eviction, built for cache ef
 
 * Fixed-size hash table with linear probing
 * LRU eviction using global doubly-linked list
-- O(1) best-case insert and lookup
+* O(1) best-case insert and lookup
 * No dynamic STL containers and manual node management
 * Unit-tested with GoogleTest
 * Benchmarks powered by Google Benchmark

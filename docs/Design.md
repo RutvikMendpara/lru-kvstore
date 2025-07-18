@@ -1,5 +1,8 @@
 # **LRU KV Store — Design Notes**
 
+## Architecture Diagram
+![lru kvstore image](lru-kvstore.png)
+
 * We use a fixed-size C-style array (`table[]`) with `CAPACITY` buckets (e.g., 1024).
 * Each bucket stores:
     * A status flag: `Empty`, `Occupied`, or `Deleted`
