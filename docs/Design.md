@@ -1,4 +1,4 @@
-# **LRU KV Store — Design Notes**
+# **LRU KV Store - Design Notes**
 
 ## Architecture Diagram
 ![lru kvstore image](lru-kvstore.png)

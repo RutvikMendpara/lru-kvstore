@@ -24,6 +24,3 @@ cd lru-kvstore
 
 See [`design.md`](docs/Design.md) for detailed internals.
 
-
----
-
