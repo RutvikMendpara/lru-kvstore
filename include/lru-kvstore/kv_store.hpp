@@ -14,7 +14,6 @@ namespace kvstore{
         KVStore() = default;
         ~KVStore();
 
-        // Disable copy/move semantics
         KVStore(const KVStore&) = delete;
         KVStore& operator=(const KVStore&) = delete;
         KVStore(KVStore&&) = delete;
@@ -30,8 +29,10 @@ namespace kvstore{
         struct Node {
             char key[32];
             char value[64];
+            size_t key_len = 0;
             Node* prev = nullptr;
             Node* next = nullptr;
+            size_t hash = 0;
         };
 
         enum class BucketState : std::uint8_t {
@@ -56,17 +57,14 @@ namespace kvstore{
 
         size_t current_size = 0;
 
-        // Hashing + probing
         static size_t fnv1a( std::string_view key) ;
         std::pair<bool, size_t> find( std::string_view key, size_t hash) const;
 
-        // LRU list ops
         void insertToFront(Node* node);
         void unlink(Node* node);
         void moveToFront(Node* node);
         void evict();
 
-        // Manual allocator
         Node* allocate_node();
         void free_node(Node* node);
     };
