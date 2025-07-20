@@ -87,11 +87,11 @@ static void BM_Mixed_HotCold(benchmark::State& state) {
     std::uniform_int_distribution<size_t> cold_dist(0, cold_size - 1);
 
     for (auto _ : state) {
-        for (int i = 0; i < 100000; ++i) {
+        for (int i = 0; i < 10000; ++i) {
             if (hot_prob(rng)) {
                 benchmark::DoNotOptimize(store.get(hot_keys[hot_dist(rng)]));
             } else {
-                store.put(cold_keys[cold_dist(rng)], "val"); // cold insert, evicts
+                store.put(cold_keys[cold_dist(rng)], "val");
             }
         }
     }
