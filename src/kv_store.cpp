@@ -3,6 +3,7 @@
 #include <cstring>
 #include <string>
 #include <algorithm>
+#include <cassert>
 
 
 namespace kvstore{
@@ -26,8 +27,7 @@ namespace kvstore{
         return hash;
     }
 
-    std::pair<bool, size_t> KVStore::find( std::string_view key, size_t hash) const
-    {
+    std::pair<bool, size_t> KVStore::find(std::string_view key, size_t hash) const {
         size_t idx = hash % CAPACITY;
         size_t start = idx;
         std::optional<size_t> first_deleted;
@@ -36,23 +36,25 @@ namespace kvstore{
             const auto& bucket = table[idx];
 
             if (bucket.state == BucketState::Empty)
-                return {false, first_deleted.value_or(idx)}; // Free slot - key not found
+                return {false, first_deleted.value_or(idx)};
 
             if (bucket.state == BucketState::Deleted) {
-                if (!first_deleted) first_deleted = idx;
-            }
-            else if (bucket.hash == hash &&
-                std::strncmp(bucket.node->key, key.data(), sizeof(bucket.node->key)) == 0 &&
-                key.size() == std::strlen(bucket.node->key))
-                {
-                    return {true, idx};
-                }
+                if (!first_deleted)
+                    first_deleted = idx;
+            } else if (     bucket.node &&
+                            bucket.hash == hash &&
+                            bucket.node->key_len == key.size() &&
+                            std::memcmp(bucket.node->key, key.data(), key.size()) == 0) {
+                return {true, idx};
+                       }
 
             idx = (idx + 1) % CAPACITY;
             if (idx == start)
-                return {false, CAPACITY}; // Full loop - table is full
+               break;
         }
+        return {false, first_deleted.value_or(CAPACITY)};
     }
+
 
 
     std::optional<std::string_view> KVStore::get(std::string_view key) {
@@ -65,9 +67,6 @@ namespace kvstore{
         return std::string_view{node->value};
     }
 
-
-
-
     void KVStore::put(std::string_view key, std::string_view value) {
         if (key.size() >= sizeof(Node::key) || value.size() >= sizeof(Node::value)) {
             return;
@@ -77,10 +76,13 @@ namespace kvstore{
         auto [found, idx] = find(key, hash);
 
         if (found) {
-            Node* node = table[idx].node;
+            Node *node = table[idx].node;
+        node->hash = hash;
+
             size_t val_len = std::min(value.size(), sizeof(node->value) - 1);
             memcpy(node->value, value.data(), val_len);
             node->value[val_len] = '\0';
+
             moveToFront(node);
             return;
         }
@@ -88,9 +90,12 @@ namespace kvstore{
         if (current_size >= CAPACITY) {
             evict();
             std::tie(found, idx) = find(key, hash);
+            if (idx == CAPACITY) {
+                std::abort();
+            }
         }
 
-        Node* node = allocate_node();
+        Node *node = allocate_node();
         if (!node) {
             return;
         }
@@ -98,6 +103,8 @@ namespace kvstore{
         size_t key_len = std::min(key.size(), sizeof(node->key) - 1);
         memcpy(node->key, key.data(), key_len);
         node->key[key_len] = '\0';
+        node->key_len = key_len;
+        node->hash = hash;
 
         size_t val_len = std::min(value.size(), sizeof(node->value) - 1);
         memcpy(node->value, value.data(), val_len);
@@ -105,7 +112,7 @@ namespace kvstore{
 
         insertToFront(node);
 
-        auto& bucket = table[idx];
+        auto &bucket = table[idx];
         bucket.hash = hash;
         bucket.node = node;
         bucket.state = BucketState::Occupied;
@@ -122,7 +129,7 @@ namespace kvstore{
         if (head)
             head->prev = node;
         else
-            tail = node; // List was empty
+            tail = node;
 
         head = node;
     }
@@ -152,35 +159,47 @@ namespace kvstore{
         unlink(node);
         insertToFront(node);
     }
-
-    void KVStore::evict() {
+        void KVStore::evict() {
         if (!tail)
             return;
 
         Node* node = tail;
-        unlink(node);
 
-        size_t hash = fnv1a(node->key);
+        size_t hash = node->hash;
         size_t idx = hash % CAPACITY;
+        size_t start = idx;
+
+        bool removed = false;
 
         while (true) {
             auto& bucket = table[idx];
 
             if (bucket.state == BucketState::Occupied &&
+                bucket.node != nullptr &&
                 bucket.hash == hash &&
-                std::strcmp(bucket.node->key, node->key) == 0)
-            {
+                bucket.node->key_len == node->key_len &&
+                std::memcmp(bucket.node->key, node->key, node->key_len) == 0) {
+
                 bucket.node = nullptr;
                 bucket.state = BucketState::Deleted;
+                removed = true;
                 break;
-            }
+                }
 
             idx = (idx + 1) % CAPACITY;
+            if (idx == start)
+                break;
         }
 
+        if (!removed) {
+            std::abort();
+        }
+
+        unlink(node);
         free_node(node);
         --current_size;
     }
+
 
     bool KVStore::erase(std::string_view key) {
         size_t hash = fnv1a(key);
