@@ -1,5 +1,7 @@
 #pragma once
 
+#include "concurrency.hpp"
+
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -25,6 +27,7 @@ namespace kvstore{
         size_t size() const;
 
     private:
+        SpinLock write_lock_;
 
         struct Node {
             char key[32];

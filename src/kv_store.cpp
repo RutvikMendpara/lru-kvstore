@@ -1,4 +1,4 @@
-#include "lru-kvstore/kv_store.hpp"
+                                #include "lru-kvstore/kv_store.hpp"
 
 #include <cstring>
 #include <string>
@@ -68,7 +68,11 @@ namespace kvstore{
     }
 
     void KVStore::put(std::string_view key, std::string_view value) {
+
+        write_lock_.lock();
+
         if (key.size() >= sizeof(Node::key) || value.size() >= sizeof(Node::value)) {
+            write_lock_.unlock();
             return;
         }
 
@@ -84,6 +88,7 @@ namespace kvstore{
             node->value[val_len] = '\0';
 
             moveToFront(node);
+            write_lock_.unlock();
             return;
         }
 
@@ -97,6 +102,7 @@ namespace kvstore{
 
         Node *node = allocate_node();
         if (!node) {
+            write_lock_.unlock();
             return;
         }
 
@@ -118,6 +124,8 @@ namespace kvstore{
         bucket.state = BucketState::Occupied;
 
         ++current_size;
+
+        write_lock_.unlock();
     }
 
 
@@ -202,9 +210,15 @@ namespace kvstore{
 
 
     bool KVStore::erase(std::string_view key) {
+        write_lock_.lock();
+
         size_t hash = fnv1a(key);
         auto [found, idx] = find(key, hash);
-        if (!found) return false;
+        if (!found) {
+            write_lock_.unlock();
+            return false;
+        }
+
 
         Node* node = table[idx].node;
         unlink(node);
@@ -215,6 +229,8 @@ namespace kvstore{
         table[idx].state = BucketState::Deleted;
 
         --current_size;
+
+        write_lock_.unlock();
         return true;
     }
 
