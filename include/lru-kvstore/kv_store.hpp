@@ -46,7 +46,7 @@ namespace kvstore{
 
         struct Bucket {
             size_t hash = 0;
-            Node* node = nullptr;
+            std::atomic<Node*> node = nullptr;
             BucketState state = BucketState::Empty;
         };
 
