@@ -1,4 +1,4 @@
-#include "lru-kvstore/kv_store.hpp"
+ #include "lru-kvstore/kv_store.hpp"
 
 #include <cstring>
 #include <string>
@@ -41,12 +41,17 @@ namespace kvstore{
             if (bucket.state == BucketState::Deleted) {
                 if (!first_deleted)
                     first_deleted = idx;
-            } else if (     bucket.node &&
-                            bucket.hash == hash &&
-                            bucket.node->key_len == key.size() &&
-                            std::memcmp(bucket.node->key, key.data(), key.size()) == 0) {
-                return {true, idx};
-                       }
+            } else {
+                Node* node = bucket.node.load(std::memory_order_acquire);
+                if (     node &&
+                           bucket.hash == hash &&
+                           node->key_len == key.size() &&
+                           std::memcmp(node->key, key.data(), key.size()) == 0) {
+                    return {true, idx};
+                           }
+            }
+
+
 
             idx = (idx + 1) % CAPACITY;
             if (idx == start)
@@ -62,13 +67,21 @@ namespace kvstore{
         auto [found, idx] = find(key, hash);
         if (!found) return std::nullopt;
 
-        Node* node = table[idx].node;
-        moveToFront(node);
+        Node* node = table[idx].node.load(std::memory_order_acquire);
+        if (!node) return std::nullopt;
+
+        if (node->key_len != key.size()) return std::nullopt;
+        if (memcmp(node->key, key.data(), key.size()) != 0) return std::nullopt;
+
         return std::string_view{node->value};
     }
 
     void KVStore::put(std::string_view key, std::string_view value) {
+
+        write_lock_.lock();
+
         if (key.size() >= sizeof(Node::key) || value.size() >= sizeof(Node::value)) {
+            write_lock_.unlock();
             return;
         }
 
@@ -84,6 +97,7 @@ namespace kvstore{
             node->value[val_len] = '\0';
 
             moveToFront(node);
+            write_lock_.unlock();
             return;
         }
 
@@ -97,6 +111,7 @@ namespace kvstore{
 
         Node *node = allocate_node();
         if (!node) {
+            write_lock_.unlock();
             return;
         }
 
@@ -118,6 +133,8 @@ namespace kvstore{
         bucket.state = BucketState::Occupied;
 
         ++current_size;
+
+        write_lock_.unlock();
     }
 
 
@@ -159,7 +176,9 @@ namespace kvstore{
         unlink(node);
         insertToFront(node);
     }
-        void KVStore::evict() {
+
+
+    void KVStore::evict() {
         if (!tail)
             return;
 
@@ -173,14 +192,14 @@ namespace kvstore{
 
         while (true) {
             auto& bucket = table[idx];
+            Node* current = bucket.node.load(std::memory_order_acquire);
 
-            if (bucket.state == BucketState::Occupied &&
-                bucket.node != nullptr &&
+            if (current &&
                 bucket.hash == hash &&
-                bucket.node->key_len == node->key_len &&
-                std::memcmp(bucket.node->key, node->key, node->key_len) == 0) {
+                current->key_len == node->key_len &&
+                std::memcmp(current->key, node->key, node->key_len) == 0) {
 
-                bucket.node = nullptr;
+                bucket.node.store(nullptr, std::memory_order_release);
                 bucket.state = BucketState::Deleted;
                 removed = true;
                 break;
@@ -202,9 +221,15 @@ namespace kvstore{
 
 
     bool KVStore::erase(std::string_view key) {
+        write_lock_.lock();
+
         size_t hash = fnv1a(key);
         auto [found, idx] = find(key, hash);
-        if (!found) return false;
+        if (!found) {
+            write_lock_.unlock();
+            return false;
+        }
+
 
         Node* node = table[idx].node;
         unlink(node);
@@ -215,6 +240,8 @@ namespace kvstore{
         table[idx].state = BucketState::Deleted;
 
         --current_size;
+
+        write_lock_.unlock();
         return true;
     }
 

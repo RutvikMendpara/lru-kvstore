@@ -23,7 +23,8 @@
 * If inserting a new key and store is full (`size == CAPACITY`):
     * **Evict tail node**
     * Clear its slot and remove from linked list
-* Insert new node, update table, and move to head of LRU list
+* In concurrnt design It does not update LRU order to avoid locking or contention.
+
 
 ---
 
@@ -32,7 +33,6 @@
 * Compute hash and index as above
 * Use linear probing to find the key
 * If found:
-    * Move node to head of LRU list
     * Return value
 
 ---
