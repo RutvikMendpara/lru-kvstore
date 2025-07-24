@@ -1,4 +1,4 @@
-# **LRU KV Store - Design Notes**
+# **LRU KV Store Design Notes**
 
 ## Architecture Diagram
 ![lru kvstore image](lru-kvstore.png)
@@ -6,7 +6,7 @@
 * We use a fixed-size C-style array (`table[]`) with `CAPACITY` buckets (e.g., 1024).
 * Each bucket stores:
     * A status flag: `Empty`, `Occupied`, or `Deleted`
-    * A pointer to a Node
+    * `std::atomic<Node*>`: pointer to key-value node
 * All Nodes are linked via a global doubly-linked list, which tracks usage order:
     * Head = most recently used
     * Tail = least recently used
@@ -23,17 +23,15 @@
 * If inserting a new key and store is full (`size == CAPACITY`):
     * **Evict tail node**
     * Clear its slot and remove from linked list
-* In concurrnt design It does not update LRU order to avoid locking or contention.
-
+* **Concurrency note**: In concurrent mode, LRU list is not updated on reads to avoid locking.
 
 ---
 
 ### **Get (Access)**
 
-* Compute hash and index as above
-* Use linear probing to find the key
+* Compute hash + probe for key
 * If found:
-    * Return value
+    * Return `std::string_view` to value
 
 ---
 
@@ -47,6 +45,7 @@
 
 ### **Complexity**
 
-* **Best case**: O(1) insert/get (ideal hash, no collision)
-* **Worst case**: O(n) if hash collisions degenerate (linear probe through many buckets)
-
+| Operation | Best Case | Worst Case            |
+| --------- | --------- | --------------------- |
+| `put()`   | O(1)      | O(n) (linear probing) |
+| `get()`   | O(1)      | O(n) (collisions)     |
