@@ -25,7 +25,7 @@ cd lru-kvstore
 
 * [Design Overview](docs/Design.md)
 * [Benchmark Results](docs/benchmarks.md)
-
+* [Concurrency Model](docs/concurrency.md)
 
 ## Requirements
 
