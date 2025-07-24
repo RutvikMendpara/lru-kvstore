@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <thread>
 
 using namespace kvstore;
 
@@ -97,10 +98,58 @@ static void BM_Mixed_HotCold(benchmark::State& state) {
     }
 }
 
+static void BM_Get_ParallelReaders(benchmark::State& state) {
+    const size_t hot_size = 256;
+    auto hot_keys = generate_keys(hot_size);
+
+    KVStore store;
+    for (const auto& key : hot_keys)
+        store.put(key, "val");
+
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, hot_size - 1);
+
+    for (auto _ : state) {
+        const std::string& key = hot_keys[dist(rng)];
+        benchmark::DoNotOptimize(store.get(key));
+    }
+}
+
+
+
+static void BM_Concurrent_ReadWrite(benchmark::State& state) {
+    const size_t hot_size = 512;
+    auto hot_keys = generate_keys(hot_size);
+    auto write_keys = generate_keys(10000);
+
+    KVStore store;
+    for (const auto& key : hot_keys)
+        store.put(key, "val");
+
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> hot_dist(0, hot_size - 1);
+    std::uniform_int_distribution<size_t> write_dist(0, write_keys.size() - 1);
+
+    for (auto _ : state) {
+        if (state.thread_index() == 0) {
+            // Writer
+            store.put(write_keys[write_dist(rng)], "val");
+        } else {
+            // Readers
+            benchmark::DoNotOptimize(store.get(hot_keys[hot_dist(rng)]));
+        }
+    }
+}
+
+
+
 BENCHMARK(BM_Insert_NoEvict)->UseRealTime();
 BENCHMARK(BM_Insert_WithEvict)->UseRealTime();
 BENCHMARK(BM_Get_HotHit)->UseRealTime();
 BENCHMARK(BM_Get_ColdMiss)->UseRealTime();
 BENCHMARK(BM_Mixed_HotCold)->UseRealTime();
+BENCHMARK(BM_Get_ParallelReaders)->Threads(8)->UseRealTime();
+BENCHMARK(BM_Concurrent_ReadWrite)->Threads(5)->UseRealTime();
+
 
 BENCHMARK_MAIN();
