@@ -30,5 +30,5 @@ cd lru-kvstore
 ## Requirements
 
 * CMake 3.16+
-* C++20 or newer
+* C++17 or newer
 
