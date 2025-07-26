@@ -3,15 +3,16 @@
 ## Overview
 
 This KVStore supports concurrent access for:
-- Multiple `get()` readers (lock-free via atomic pointers)
-- Single `put()` writer (protected by spinlock)
+- Multiple `get()` readers (lock-free)
+- Multiple `put()` writers (via sharding)
 
 ## Design
 
-- Each bucket uses `std::atomic<Node*>` for safe reads.
-- Global LRU list is modified only by writer thread.
-- Writer uses `SpinLock` to ensure mutual exclusion on insert/evict.
-- Reader threads do not update LRU order to avoids contention.
+- Store is sharded: each shard has its own hash table, spinlock, and LRU list.
+- Each bucket uses `std::atomic<Node*>` for safe, lock-free reads.
+- Writers acquire per-shard `SpinLock` to insert/evict safely.
+- LRU list is shard-local and only updated by the writer.
+- Readers do not modify LRU to avoid contention.
 
 ## Guarantees
 
@@ -21,5 +22,15 @@ This KVStore supports concurrent access for:
 
 ## Limitations
 
-- Only one writer supported at a time.
-- LRU order may be stale under high concurrency.
+- Writes to the *same shard* are serialized
+- LRU ordering is **per-shard**, not global
+- No cross-shard consistency or atomicity
+
+## Summary
+
+| Operation | Concurrency            | Locking              |
+|-----------|------------------------|----------------------|
+| `get()`   | Multi-reader           | Lock-free            |
+| `put()`   | Multi-writer (sharded) | SpinLock per shard   |
+| LRU List  | Shard-local            | Serialized per shard |
+

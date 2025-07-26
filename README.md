@@ -1,15 +1,15 @@
 # lru-kvstore
-High-performance in-memory key-value store with LRU eviction and thread-safe access. Built for predictability, low-latency, and extensibility.
+High-performance, fixed-capacity in-memory key-value store with LRU eviction and thread-safe access. Designed for low latency, high concurrency, and predictable memory usage.
 
 ## Features
 
-* Fixed-size hash table with linear probing
-* LRU eviction using global doubly-linked list
-* O(1) best-case `put()` and `get()`
-* No dynamic memory allocations after init (no `std::unordered_map`, `std::list`, etc.)
-* Thread-safe via spinlocks + atomic pointers
-* Unit-tested with GoogleTest
-* Benchmarks powered by Google Benchmark ([see results](docs/benchmarks.md))
+- Fixed-size open-addressed hash table (linear probing per shard)
+- **Per-shard** LRU eviction using intrusive doubly-linked list
+- Lock-striping with per-shard spinlocks (no global locks)
+- Zero heap allocations during runtime (no `unordered_map`, `std::list`, etc.)
+- O(1) expected-case `get()` / `put()` under low to moderate contention
+- Fully unit-tested (GoogleTest) and benchmarked (Google Benchmark) ([see results](docs/benchmarks.md))
+
 
 ## Build & Run
 
@@ -20,6 +20,13 @@ cd lru-kvstore
 ./scripts/test.sh    # Run unit tests (gtest)
 ./scripts/bench.sh   # Run performance benchmarks (gbench)
 ```
+## Project Structure
+
+* `include/` – Public headers
+* `src/` – Implementation (core logic, LRU list, spinlocks, etc.)
+* `tests/` – Unit and concurrency tests (GoogleTest)
+* `bench/` – Performance benchmarks (Google Benchmark)
+* `docs/` – Design, benchmark results, concurrency details
 
 ## Documentation
 
@@ -30,5 +37,5 @@ cd lru-kvstore
 ## Requirements
 
 * CMake 3.16+
-* C++17 or newer
-
+* C++20 compatible compiler (GCC, Clang)
+* GoogleTest + Google Benchmark (auto-installed via build scripts)
