@@ -141,6 +141,40 @@ static void BM_Concurrent_ReadWrite(benchmark::State& state) {
     }
 }
 
+static void BM_Write_Heavy_Parallel(benchmark::State& state) {
+    auto keys = generate_keys(10000);
+    KVStore store;
+
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, keys.size() - 1);
+
+    for (auto _ : state) {
+        store.put(keys[dist(rng)], "val");
+    }
+}
+
+static void BM_ReadMostly_SharedStore(benchmark::State& state) {
+    auto hot_keys = generate_keys(CAPACITY);
+    auto write_keys = generate_keys(10000);
+    KVStore store;
+
+    for (auto& key : hot_keys) store.put(key, "val");
+
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<> prob(0.0, 1.0);
+    std::uniform_int_distribution<size_t> read_dist(0, hot_keys.size() - 1);
+    std::uniform_int_distribution<size_t> write_dist(0, write_keys.size() - 1);
+
+    for (auto _ : state) {
+        if (prob(rng) < 0.05) {
+            store.put(write_keys[write_dist(rng)], "val");
+        } else {
+            benchmark::DoNotOptimize(store.get(hot_keys[read_dist(rng)]));
+        }
+    }
+}
+
+
 
 
 BENCHMARK(BM_Insert_NoEvict)->UseRealTime();
@@ -150,6 +184,8 @@ BENCHMARK(BM_Get_ColdMiss)->UseRealTime();
 BENCHMARK(BM_Mixed_HotCold)->UseRealTime();
 BENCHMARK(BM_Get_ParallelReaders)->Threads(8)->UseRealTime();
 BENCHMARK(BM_Concurrent_ReadWrite)->Threads(5)->UseRealTime();
+BENCHMARK(BM_Write_Heavy_Parallel)->Threads(4)->UseRealTime();
+BENCHMARK(BM_ReadMostly_SharedStore)->Threads(8)->UseRealTime();
 
 
 BENCHMARK_MAIN();
