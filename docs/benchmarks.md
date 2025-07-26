@@ -9,20 +9,23 @@
 
 ## Summary Table (Real Time, ns)
 
-| Benchmark                           | Mean Time (ns) | Description                                    | Iterations |
-| ----------------------------------- |----------------| ---------------------------------------------- |------------|
-| `BM_Insert_NoEvict`                 | 129733         | Insert N keys where N ≤ CAPACITY, no eviction. | 5310       |
-| `BM_Insert_WithEvict`               | 43546943       | Insert 10× CAPACITY, triggers max eviction.    | 16         |
-| `BM_Get_HotHit`                     | 73892          | 100% cache hit, read from hot set.             | 9399       | 
-| `BM_Get_ColdMiss`                   | 154292         | 100% miss, read from never-inserted keys.      | 4490       | 
-| `BM_Mixed_HotCold`                  | 19807657       | 90% hot reads, 10% cold writes.                | 37         | 
-| `BM_Get_ParallelReaders/threads:8`  | 92.6           | 8 threads hammering `get()` concurrently.      | 7103224    | 
-| `BM_Concurrent_ReadWrite/threads:5` | 953            | 4 readers + 1 writer, simulates live load.     | 732270     | 
+| Benchmark                           | Old Time (ns) | New Time (ns) | Δ (%)    | Description                            |
+| ----------------------------------- | ------------- | ------------- | -------- | -------------------------------------- |
+| `BM_Insert_NoEvict`                 | 129,733       | **78,789**    | **−39%** | Insert N keys where N ≤ CAPACITY       |
+| `BM_Insert_WithEvict`               | 43,546,943    | **6,374,137** | **−85%** | Insert 10× CAPACITY, triggers eviction |
+| `BM_Get_HotHit`                     | 73,892        | **61,645**    | **−17%** | 100% cache hit                         |
+| `BM_Get_ColdMiss`                   | 154,292       | **176,832**   | **+14%** | 100% miss, never-inserted keys         |
+| `BM_Mixed_HotCold`                  | 19,807,657    | **3,164,775** | **−84%** | 90% hot reads, 10% cold writes         |
+| `BM_Get_ParallelReaders/threads:8`  | 92.6          | **87.9**      | **−5%**  | 8 threads concurrently reading         |
+| `BM_Concurrent_ReadWrite/threads:5` | 953           | **217**       | **−77%** | 4 readers + 1 writer under stress      |
 
 ---
 
 ## Notes
 
-* `get()` performance remains **stable under concurrent load**.
-* Eviction introduces predictable overhead — no major latency spikes.
-* No data corruption observed under multithreaded read/write stress.
+* `get()` performance remains highly stable under concurrent load, minimal contention observed.
+* Eviction now completes over 6× faster significant reduction in latency and overhead.
+* Mixed workloads (hot/cold access) are vastly more efficient, LRU path is now well-optimized.
+* No data corruption or race conditions observed under aggressive multithreaded stress.
+* Overall memory usage and locking behavior appear well-balanced across shards.
+
