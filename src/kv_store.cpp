@@ -27,8 +27,8 @@ namespace kvstore{
         return hash;
     }
 
-    std::pair<bool, size_t> KVStore::find(std::string_view key, size_t hash) const {
-        size_t idx = hash % CAPACITY;
+    std::pair<bool, size_t> Shard::find(std::string_view key, size_t hash) const {
+        size_t idx = hash % LOCAL_CAPACITY;
         size_t start = idx;
         std::optional<size_t> first_deleted;
 
@@ -53,21 +53,26 @@ namespace kvstore{
 
 
 
-            idx = (idx + 1) % CAPACITY;
+            idx = (idx + 1) % LOCAL_CAPACITY;
             if (idx == start)
                break;
         }
-        return {false, first_deleted.value_or(CAPACITY)};
+        return {false, first_deleted.value_or(LOCAL_CAPACITY)};
     }
 
 
 
     std::optional<std::string_view> KVStore::get(std::string_view key) {
         size_t hash = fnv1a(key);
-        auto [found, idx] = find(key, hash);
+        size_t shard_idx = hash % NUM_SHARDS;
+        Shard& shard = shards[shard_idx];
+
+        std::lock_guard<SpinLock> guard(shard.lock);
+
+        auto [found, idx] = shard.find(key, hash);
         if (!found) return std::nullopt;
 
-        Node* node = table[idx].node.load(std::memory_order_acquire);
+        Shard::Node* node = shard.table[idx].node.load(std::memory_order_acquire);
         if (!node) return std::nullopt;
 
         if (node->key_len != key.size()) return std::nullopt;
@@ -77,41 +82,38 @@ namespace kvstore{
     }
 
     void KVStore::put(std::string_view key, std::string_view value) {
-
-        write_lock_.lock();
-
-        if (key.size() >= sizeof(Node::key) || value.size() >= sizeof(Node::value)) {
-            write_lock_.unlock();
-            return;
-        }
-
         size_t hash = fnv1a(key);
-        auto [found, idx] = find(key, hash);
+        size_t shard_idx = hash % NUM_SHARDS;
+        Shard& shard = shards[shard_idx];
+
+        // if (key.size() >= sizeof(Shard::Node::key) || value.size() >= sizeof(Shard::Node::value)) {
+        //     return;
+        // }
+
+        std::lock_guard<SpinLock> guard(shard.lock);
+
+        auto [found, idx] = shard.find(key, hash);
 
         if (found) {
-            Node *node = table[idx].node;
-        node->hash = hash;
-
+            auto* node = shard.table[idx].node.load();
             size_t val_len = std::min(value.size(), sizeof(node->value) - 1);
             memcpy(node->value, value.data(), val_len);
             node->value[val_len] = '\0';
-
-            moveToFront(node);
-            write_lock_.unlock();
+            node->hash = hash;
+            shard.moveToFront(node);
             return;
         }
 
-        if (current_size >= CAPACITY) {
-            evict();
-            std::tie(found, idx) = find(key, hash);
-            if (idx == CAPACITY) {
-                std::abort();
-            }
+        if (shard.current_size >= LOCAL_CAPACITY) {
+            shard.evict();
+            std::tie(found, idx) = shard.find(key, hash);
+            // if (idx >= LOCAL_CAPACITY) {
+            //     std::abort();
+            // }
         }
 
-        Node *node = allocate_node();
+        Shard::Node *node = shard.allocate_node();
         if (!node) {
-            write_lock_.unlock();
             return;
         }
 
@@ -125,20 +127,18 @@ namespace kvstore{
         memcpy(node->value, value.data(), val_len);
         node->value[val_len] = '\0';
 
-        insertToFront(node);
+        shard.insertToFront(node);
 
-        auto &bucket = table[idx];
+        auto &bucket = shard.table[idx];
         bucket.hash = hash;
-        bucket.node = node;
-        bucket.state = BucketState::Occupied;
+        bucket.node.store(node);
+        bucket.state = Shard::BucketState::Occupied;
 
-        ++current_size;
-
-        write_lock_.unlock();
+        ++shard.current_size;
     }
 
 
-    void KVStore::insertToFront(Node* node)
+    void Shard::insertToFront(Node* node)
     {
         node->prev = nullptr;
         node->next = head;
@@ -153,7 +153,7 @@ namespace kvstore{
 
 
 
-    void KVStore::unlink(Node* node)
+    void Shard::unlink(Node* node)
     {
         if (node->prev)
             node->prev->next = node->next;
@@ -169,7 +169,7 @@ namespace kvstore{
         node->next = nullptr;
     }
 
-    void KVStore::moveToFront(Node* node)
+    void Shard::moveToFront(Node* node)
     {
         if (node == head)
             return;
@@ -178,14 +178,14 @@ namespace kvstore{
     }
 
 
-    void KVStore::evict() {
+    void Shard::evict() {
         if (!tail)
             return;
 
         Node* node = tail;
 
         size_t hash = node->hash;
-        size_t idx = hash % CAPACITY;
+        size_t idx = hash % LOCAL_CAPACITY;
         size_t start = idx;
 
         bool removed = false;
@@ -205,7 +205,7 @@ namespace kvstore{
                 break;
                 }
 
-            idx = (idx + 1) % CAPACITY;
+            idx = (idx + 1) % LOCAL_CAPACITY;
             if (idx == start)
                 break;
         }
@@ -219,41 +219,57 @@ namespace kvstore{
         --current_size;
     }
 
-
     bool KVStore::erase(std::string_view key) {
-        write_lock_.lock();
-
         size_t hash = fnv1a(key);
+        Shard& shard = shards[hash % NUM_SHARDS];
+        return shard.erase(key, hash);
+    }
+
+
+    bool Shard::erase(std::string_view key, size_t hash) {
+        lock.lock();
         auto [found, idx] = find(key, hash);
         if (!found) {
-            write_lock_.unlock();
+            lock.unlock();
             return false;
         }
 
 
-        Node* node = table[idx].node;
-        unlink(node);
+        Node* node = table[idx].node.load(std::memory_order_acquire);
 
+        if (!node) {
+            lock.unlock();
+            return false;
+        }
+
+        unlink(node);
         free_node(node);
 
-        table[idx].node = nullptr;
+        table[idx].node.store(nullptr, std::memory_order_release);
         table[idx].state = BucketState::Deleted;
 
         --current_size;
 
-        write_lock_.unlock();
+        lock.unlock();
         return true;
     }
 
 
-    size_t KVStore::size() const
-    {
-        return current_size;
+    size_t KVStore::size() const {
+        size_t total = 0;
+        for (const auto& shard : shards) {
+            std::lock_guard<SpinLock> guard(shard.lock);
+            total += shard.current_size;
+        }
+        return total;
     }
 
-    KVStore::Node* KVStore::allocate_node()
+
+
+
+    Shard::Node* Shard::allocate_node()
     {
-        for (size_t i = 0; i < CAPACITY; ++i) {
+        for (size_t i = 0; i < LOCAL_CAPACITY; ++i) {
             if (!node_used[i]) {
                 node_used[i] = true;
                 return &node_pool[i];
@@ -262,12 +278,17 @@ namespace kvstore{
         return nullptr;
     }
 
-    void KVStore::free_node(Node* node)
+    void Shard::free_node(Node* node)
     {
         size_t idx = node - node_pool;
-        if (idx < CAPACITY) {
+        if (idx < LOCAL_CAPACITY) {
             node_used[idx] = false;
             *node = Node{};
+            node->prev = nullptr;
+            node->next = nullptr;
+            node->key_len = 0;
+            node->hash = 0;
+
         }
     }
 }
